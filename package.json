@@ -1,0 +1,25 @@
+{
+  "name": "anirudhaptiwari.github.io",
+  "version": "1.0.0",
+  "description": "Anirudha's personal website",
+  "main": "js/cli.js",
+  "scripts": {
+    "dev": "http-server -o",
+    "format": "prettier --write 'src/*.js'",
+    "lint": "prettier --check 'src/*.js'"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anirudhaptiwari/anirudhaptiwari.github.io.git"
+  },
+  "author": "Anirudha Pradumna Tiwari <anirudhaptiwari@gmail.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/anirudhaptiwari/anirudhaptiwari.github.io/issues"
+  },
+  "homepage": "https://github.com/anirudhaptiwari/anirudhaptiwari.github.io#readme",
+  "devDependencies": {
+    "http-server": "^14.1.1",
+    "prettier": "^2.0.2"
+  }
+}

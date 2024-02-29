@@ -1,175 +1,172 @@
-/* global $, localStorage, Shell */
+/* global $, localStorage */
 
-const errors = {
-  invalidDirectory: 'Error: not a valid directory',
-  noWriteAccess: 'Error: you do not have write access to this directory',
-  fileNotFound: 'Error: file not found in current directory',
-  fileNotSpecified: 'Error: you did not specify a file',
-  invalidFile: 'Error: not a valid file',
-};
+class Shell {
+  constructor(term, commands) {
+    this.commands = commands;
+    this.setupListeners(term);
+    this.term = term;
 
-const struct = {
-  root: ['about', 'resume', 'contact', 'talks'],
-  skills: ['proficient', 'familiar'],
-};
+    localStorage.directory = 'root';
+    localStorage.history = JSON.stringify('');
+    localStorage.historyIndex = -1;
+    localStorage.inHistory = false;
 
-const commands = {};
-let systemData = {};
-const rootPath = 'users/anirudhaptiwari/root';
-
-const getDirectory = () => localStorage.directory;
-const setDirectory = (dir) => {
-  localStorage.directory = dir;
-};
-
-// Turn on fullscreen.
-const registerFullscreenToggle = () => {
-  $('.button.green').click(() => {
-    $('.terminal-window').toggleClass('fullscreen');
-  });
-};
-const registerMinimizedToggle = () => {
-  $('.button.yellow').click(() => {
-    $('.terminal-window').toggleClass('minimized');
-  });
-};
-
-// Create new directory in current directory.
-commands.mkdir = () => errors.noWriteAccess;
-
-// Create new directory in current directory.
-commands.touch = () => errors.noWriteAccess;
-
-// Remove file from current directory.
-commands.rm = () => errors.noWriteAccess;
-
-// View contents of specified directory.
-commands.ls = (directory) => {
-  console.log(systemData);
-  if (directory === '..' || directory === '~') {
-    return systemData['root'];
+    $('.input').focus();
   }
 
-  if (directory in struct) {
-    return systemData[directory];
+  setupListeners(term) {
+    $('#terminal').mouseup(() => $('.input').last().focus());
+
+    term.addEventListener('keyup', (evt) => {
+      const keyUp = 38;
+      const keyDown = 40;
+      const key = evt.keyCode;
+
+      if ([keyUp, keyDown].includes(key)) {
+        let history = localStorage.history;
+        history = history ? Object.values(JSON.parse(history)) : [];
+
+        if (key === keyUp) {
+          if (localStorage.historyIndex >= 0) {
+            if (localStorage.inHistory == 'false') {
+              localStorage.inHistory = true;
+            }
+            // Prevent repetition of last command while traversing history.
+            if (localStorage.historyIndex == history.length - 1 && history.length !== 1) {
+              localStorage.historyIndex -= 1;
+            }
+            $('.input')
+              .last()
+              .html(`${history[localStorage.historyIndex]}<span class="end"><span>`);
+            if (localStorage.historyIndex != 0) localStorage.historyIndex -= 1;
+          }
+        } else if (key === keyDown) {
+          if (localStorage.inHistory == 'true' && localStorage.historyIndex < history.length) {
+            let ret;
+
+            if (localStorage.historyIndex > 0) {
+              ret = `${history[localStorage.historyIndex]}<span class="end"><span>`;
+              if (localStorage.historyIndex != history.length - 1) {
+                localStorage.historyIndex = Number(localStorage.historyIndex) + 1;
+              }
+              // Prevent repetition of first command while traversing history.
+            } else if (localStorage.historyIndex == 0 && history.length > 1) {
+              ret = `${history[1]}<span class="end"><span>`;
+              localStorage.historyIndex = history.length !== 2 ? 2 : 1;
+            }
+            $('.input').last().html(ret);
+          }
+        }
+        evt.preventDefault();
+        $('.end').focus();
+      }
+    });
+
+    term.addEventListener('keydown', (evt) => {
+      // Keydown legend:
+      // 9 -> Tab key.
+      // 27 -> Escape key.
+      // 8 -> Backspace key.
+      // 46 -> Delete key.
+
+      if (evt.keyCode === 9) {
+        evt.preventDefault();
+      } else if (evt.keyCode === 27) {
+        $('.terminal-window').toggleClass('fullscreen');
+      } else if (evt.keyCode === 8 || evt.keyCode === 46) {
+        this.resetHistoryIndex();
+      }
+    });
+
+    term.addEventListener('keypress', (evt) => {
+      // Exclude these keys for Firefox, as they're fired for arrow/tab keypresses.
+      if (![9, 27, 37, 38, 39, 40].includes(evt.keyCode)) {
+        // If input keys are pressed then resetHistoryIndex() is called.
+        this.resetHistoryIndex();
+      }
+      if (evt.keyCode === 13) {
+        const prompt = evt.target;
+        const input = prompt.textContent.trim().split(' ');
+        const cmd = input[0].toLowerCase();
+        const args = input[1];
+
+        if (cmd === 'clear') {
+          this.updateHistory(cmd);
+          this.clearConsole();
+        } else if (cmd && cmd in this.commands) {
+          this.runCommand(cmd, args);
+          this.resetPrompt(term, prompt);
+          $('.root').last().html(localStorage.directory);
+        } else {
+          this.term.innerHTML += 'Error: command not recognized';
+          this.resetPrompt(term, prompt);
+        }
+        evt.preventDefault();
+      }
+    });
   }
 
-  return systemData[getDirectory()];
-};
+  runCommand(cmd, args) {
+    const command = args ? `${cmd} ${args}` : cmd;
+    this.updateHistory(command);
 
-// View list of possible commands.
-commands.help = () => systemData.help;
-
-// Display current path.
-commands.path = () => {
-  const dir = getDirectory();
-  return dir === 'root' ? rootPath : `${rootPath}/${dir}`;
-};
-
-// See command history.
-commands.history = () => {
-  let history = localStorage.history;
-  history = history ? Object.values(JSON.parse(history)) : [];
-  return `<p>${history.join('<br>')}</p>`;
-};
-
-// Move into specified directory.
-commands.cd = (newDirectory) => {
-  const currDir = getDirectory();
-  const dirs = Object.keys(struct);
-  const newDir = newDirectory ? newDirectory.trim() : '';
-
-  if (dirs.includes(newDir) && currDir !== newDir) {
-    setDirectory(newDir);
-  } else if (newDir === '' || newDir === '~' || (newDir === '..' && dirs.includes(currDir))) {
-    setDirectory('root');
-  } else {
-    return errors.invalidDirectory;
-  }
-  return null;
-};
-
-// Display contents of specified file.
-commands.cat = (filename) => {
-  if (!filename) return errors.fileNotSpecified;
-
-  const isADirectory = (filename) => struct.hasOwnProperty(filename);
-  const hasValidFileExtension = (filename, extension) => filename.includes(extension);
-  const isFileInDirectory = (filename) => (filename.split('/').length === 1 ? false : true);
-  const isFileInSubdirectory = (filename, directory) => struct[directory].includes(filename);
-
-  if (isADirectory(filename)) return errors.invalidFile;
-
-  if (!isFileInDirectory(filename)) {
-    const fileKey = filename.split('.')[0];
-    const isValidFile = (filename) => systemData.hasOwnProperty(filename);
-
-    if (isValidFile(fileKey) && hasValidFileExtension(filename, '.txt')) {
-      return systemData[fileKey];
+    const output = this.commands[cmd](args);
+    if (output) {
+      this.term.innerHTML += output;
     }
   }
 
-  if (isFileInDirectory(filename)) {
-    if (hasValidFileExtension(filename, '.txt')) {
-      const directories = filename.split('/');
-      const directory = directories.slice(0, 1).join(',');
-      const fileKey = directories.slice(1, directories.length).join(',').split('.')[0];
-      if (directory === 'root' || !struct.hasOwnProperty(directory))
-        return errors.noSuchFileOrDirectory;
+  resetPrompt(term, prompt) {
+    const newPrompt = prompt.parentNode.cloneNode(true);
+    prompt.setAttribute('contenteditable', false);
 
-      return isFileInSubdirectory(fileKey, directory)
-        ? systemData[fileKey]
-        : errors.noSuchFileOrDirectory;
+    if (this.prompt) {
+      newPrompt.querySelector('.prompt').textContent = this.prompt;
     }
 
-    return errors.noSuchFileOrDirectory;
+    term.appendChild(newPrompt);
+    newPrompt.querySelector('.input').innerHTML = '';
+    newPrompt.querySelector('.input').focus();
   }
 
-  return errors.fileNotFound;
-};
+  resetHistoryIndex() {
+    let history = localStorage.history;
 
-// Initialize cli.
-$(() => {
-  registerFullscreenToggle();
-  registerMinimizedToggle();
-  const cmd = document.getElementById('terminal');
+    history = history ? Object.values(JSON.parse(history)) : [];
+    if (localStorage.goingThroughHistory == true) {
+      localStorage.goingThroughHistory = false;
+    }
 
-  $.ajaxSetup({ cache: false });
-  const pages = [];
-  pages.push($.get('pages/about.html'));
-  pages.push($.get('pages/contact.html'));
-  pages.push($.get('pages/familiar.html'));
-  pages.push($.get('pages/help.html'));
-  pages.push($.get('pages/proficient.html'));
-  pages.push($.get('pages/resume.html'));
-  pages.push($.get('pages/root.html'));
-  pages.push($.get('pages/skills.html'));
-  pages.push($.get('pages/talks.html'));
-  $.when
-    .apply($, pages)
-    .done(
-      (
-        aboutData,
-        contactData,
-        familiarData,
-        helpData,
-        proficientData,
-        resumeData,
-        rootData,
-        skillsData,
-        talksData,
-      ) => {
-        systemData['about'] = aboutData[0];
-        systemData['contact'] = contactData[0];
-        systemData['familiar'] = familiarData[0];
-        systemData['help'] = helpData[0];
-        systemData['proficient'] = proficientData[0];
-        systemData['resume'] = resumeData[0];
-        systemData['root'] = rootData[0];
-        systemData['skills'] = skillsData[0];
-        systemData['talks'] = talksData[0];
-      },
+    if (history.length == 0) {
+      localStorage.historyIndex = -1;
+    } else {
+      localStorage.historyIndex = history.length - 1 > 0 ? history.length - 1 : 0;
+    }
+  }
+
+  updateHistory(command) {
+    let history = localStorage.history;
+    history = history ? Object.values(JSON.parse(history)) : [];
+
+    history.push(command);
+    localStorage.history = JSON.stringify(history);
+    localStorage.historyIndex = history.length - 1;
+  }
+
+  clearConsole() {
+    const getDirectory = () => localStorage.directory;
+    const dir = getDirectory();
+
+    $('#terminal').html(
+      `<p class="hidden">
+          <span class="prompt">
+            <span class="root">${dir}</span>
+            <span class="tick">$</span>
+          </span>
+          <span contenteditable="true" class="input" spellcheck="false"></span>
+        </p>`,
     );
 
-  const terminal = new Shell(cmd, commands);
-});
+    $('.input').focus();
+  }
+}
